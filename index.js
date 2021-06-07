@@ -8,6 +8,9 @@ RawLeadFile = path.resolve("./json/Data.json");
 const fs = require("fs");
 const puppeteer = require("puppeteer");
 const querystring = require("querystring");
+const bodyParser = require('body-parser');
+const Excel = require("exceljs");
+const moment = require("moment");
 
 const bigquery = new BigQuery({
   projectId: "customerlabs-313302",
@@ -15,6 +18,10 @@ const bigquery = new BigQuery({
 });
 
 const app = express();
+const filepath = "./report/ReportLeads.xlsx";
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
+app.use(bodyParser.raw());
 const port = 8080;
 app.use(cors());
 const datasetId = "report";
@@ -79,6 +86,47 @@ const inserttest = async () => {
   return rows;
 };
 
+const setupxlsxFile = async () => {
+  let workbook = new Excel.Workbook();
+
+  //create sheet
+  let worksheet_crm = workbook.addWorksheet("CRM_Leads");
+  let worksheet_edm = workbook.addWorksheet("EDM_Leads");
+
+  //create column
+  worksheet_crm.columns = [
+    { header: "FullName", key: "fullname" },
+    { header: "scoreFullname", key: "scoreFullname" },
+    { header: "email", key: "email" },
+    { header: "scoreEmail", key: "scoreEmail" },
+    { header: "phone", key: "phone" },
+    { header: "scorePhone", key: "scorePhone" },
+    { header: "src", key: "src" },
+    { header: "scoreSRC", key: "scoreSRC" },
+    { header: "totalScore", key: "totalScore" },
+    { header: "note", key: "note" },
+    { header: "dateStamp", key: "dateStamp" },
+  ];
+  worksheet_edm.columns = [
+    { header: "FullName", key: "fullname" },
+    { header: "scoreFullname", key: "scoreFullname" },
+    { header: "email", key: "email" },
+    { header: "scoreEmail", key: "scoreEmail" },
+    { header: "phone", key: "phone" },
+    { header: "scorePhone", key: "scorePhone" },
+    { header: "src", key: "src" },
+    { header: "scoreSRC", key: "scoreSRC" },
+    { header: "totalScore", key: "totalScore" },
+    { header: "note", key: "note" },
+    { header: "dateStamp", key: "dateStamp" },
+  ];
+
+  //bold header
+  worksheet_edm.getRow(1).font = { bold: true };
+  worksheet_crm.getRow(1).font = { bold: true };
+  await workbook.xlsx.writeFile(filepath);
+}
+
 app.get("/", (req, res) => {
   let p1 = req.query.p1;
   let p2 = req.query.p2;
@@ -106,8 +154,205 @@ app.get("/submitform/", async (req, res) => {
   await page.click("#submit");
   await page.waitForTimeout(5000);
   await browser.close();
-  res.send({name:name,phone:phone,email:email,note:note});
+  res.send({ name: name, phone: phone, email: email, note: note });
   // res.download(pic)
+});
+
+app.post("/submitform2/", async (req, res) => {
+  const dateStamp = moment().format('MMMM Do YYYY, h:mm:ss a');
+  const fullname = req.body.traits.fullname ? req.body.traits.fullname : '';
+  const email = req.body.external_ids.identify_by_email ? req.body.external_ids.identify_by_email : '';
+  const phone = req.body.external_ids.identify_by_phone ? req.body.external_ids.identify_by_phone : '';
+  const src = req.body.utm.utm_source ? req.body.utm.utm_source : '';
+  const note = req.body.traits.note ? req.body.traits.note : '';
+
+  const EmailRegex = /^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i;
+  let scoreEmail = 0
+  if (email !== '') {
+    if (EmailRegex.test(email) === true)
+      scoreEmail = 10
+    else
+      scoreEmail = -10
+  }
+  const FullnameRegex = /[^a-z0-9A-Z_ÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠàáâãèéêìíòóôõùúăđĩũơƯĂẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼỀỀỂưăạảấầẩẫậắằẳẵặẹẻẽềềểỄỆỈỊỌỎỐỒỔỖỘỚỜỞỠỢỤỦỨỪễệỉịọỏốồổỗộớờởỡợụủứừỬỮỰỲỴÝỶỸửữựỳỵỷỹ]/u;
+  let scoreFullname = 0
+  if (fullname !== '') {
+    if (FullnameRegex.test(fullname) === true)
+      scoreFullname = 10
+    else
+      scoreFullname = -10
+  }
+  const PhoneRegex = /^(1[ \-\+]{0,3}|\+1[ -\+]{0,3}|\+1|\+)?((\(\+?1-[2-9][0-9]{1,2}\))|(\(\+?[2-8][0-9][0-9]\))|(\(\+?[1-9][0-9]\))|(\(\+?[17]\))|(\([2-9][2-9]\))|([ \-\.]{0,3}[0-9]{2,4}))?([ \-\.][0-9])?([ \-\.]{0,3}[0-9]{2,4}){2,3}$/g;
+  let scorePhone = 0
+  if (phone !== '') {
+    if (PhoneRegex.test(phone) === true)
+      scorePhone = 10
+    else
+      scorePhone = -10
+  }
+  let scoreSRC = 0;
+  switch (src) {
+    case 'facebook':
+      scoreSRC = 5;
+    case 'l.facebook.com':
+      scoreSRC = 5;
+      break;
+    case 'email':
+      scoreSRC = 10;
+      break;
+    case 'google':
+      scoreSRC = 15;
+      break;
+    default:
+      break;
+  }
+  const totalScore = scoreEmail + scoreFullname + scorePhone + scoreSRC;
+  const maxScore = 45;
+
+  const workbook = new Excel.Workbook();
+  await workbook.xlsx.readFile(filepath);
+  const worksheet_crm = workbook.getWorksheet("CRM_Leads");
+  const worksheet_edm = workbook.getWorksheet("EDM_Leads");
+
+  if (totalScore > (maxScore / 2)) {
+    const browser = await puppeteer.launch({ headless: false });
+    const page = await browser.newPage();
+    page.setViewport({ width: 1280, height: 720 });
+    await page.goto("http://localhost:3000/", { waitUntil: "networkidle2" });
+    await page.type("#Name", fullname);
+    await page.type("#Phone", phone);
+    await page.type("#Email", email);
+    await page.type("#Note", note.concat(`. Score : ${totalScore}`));
+    await page.click("#submit");
+    // await page.waitForTimeout(5000);
+    worksheet_crm.columns = [
+      { header: "FullName", key: "fullname" },
+      { header: "scoreFullname", key: "scoreFullname" },
+      { header: "email", key: "email" },
+      { header: "scoreEmail", key: "scoreEmail" },
+      { header: "phone", key: "phone" },
+      { header: "scorePhone", key: "scorePhone" },
+      { header: "src", key: "src" },
+      { header: "scoreSRC", key: "scoreSRC" },
+      { header: "totalScore", key: "totalScore" },
+      { header: "note", key: "note" },
+      { header: "dateStamp", key: "dateStamp" },
+    ];
+    await worksheet_crm.addRow({
+      fullname: fullname,
+      scoreFullname: scoreFullname,
+      email: email,
+      scoreEmail: scoreEmail,
+      phone: phone,
+      scorePhone: scorePhone,
+      src: src,
+      scoreSRC: scoreSRC,
+      totalScore: totalScore,
+      note: note,
+      dateStamp:dateStamp,
+    });
+    await browser.close();
+
+  }
+  else {
+    worksheet_edm.columns = [
+      { header: "FullName", key: "fullname" },
+      { header: "scoreFullname", key: "scoreFullname" },
+      { header: "email", key: "email" },
+      { header: "scoreEmail", key: "scoreEmail" },
+      { header: "phone", key: "phone" },
+      { header: "scorePhone", key: "scorePhone" },
+      { header: "src", key: "src" },
+      { header: "scoreSRC", key: "scoreSRC" },
+      { header: "totalScore", key: "totalScore" },
+      { header: "note", key: "note" },
+      { header: "dateStamp", key: "dateStamp" },
+    ];
+    worksheet_edm.addRow({
+      fullname: fullname,
+      scoreFullname: scoreFullname,
+      email: email,
+      scoreEmail: scoreEmail,
+      phone: phone,
+      scorePhone: scorePhone,
+      src: src,
+      scoreSRC: scoreSRC,
+      totalScore: totalScore,
+      note: note,
+      dateStamp:dateStamp,
+    });
+  }
+
+  await workbook.xlsx.writeFile(filepath);
+
+  res.send({
+    name: fullname,
+    phone: phone,
+    email: email,
+    src: src,
+    s_E: scoreEmail,
+    s_N: scoreFullname,
+    s_P: scorePhone,
+    s_S: scoreSRC,
+    s_T: totalScore
+  });
+});
+
+app.get("/Report", async (req, res) => {
+  res.download(filepath);
+});
+
+// app.get("/testadd", async (req, res) => {
+//   try {
+//     const dateStamp = moment().format('MMMM Do YYYY, h:mm:ss a');
+//     const workbook = new Excel.Workbook();
+//     await workbook.xlsx.readFile(filepath);
+//     console.log(dateStamp);
+//     const worksheet_crm = await workbook.getWorksheet("CRM_Leads");
+//     console.log(2);
+//     worksheet_crm.columns = [
+//       { header: "FullName", key: "fullname" },
+//       { header: "scoreFullname", key: "scoreFullname" },
+//       { header: "email", key: "email" },
+//       { header: "scoreEmail", key: "scoreEmail" },
+//       { header: "phone", key: "phone" },
+//       { header: "scorePhone", key: "scorePhone" },
+//       { header: "src", key: "src" },
+//       { header: "scoreSRC", key: "scoreSRC" },
+//       { header: "totalScore", key: "totalScore" },
+//       { header: "note", key: "note" },
+//       { header: "dateStamp", key: "dateStamp" },
+//     ];
+//     await worksheet_crm.addRow({
+//       fullname: "2",
+//       scoreFullname: "1",
+//       email: "1",
+//       scoreEmail: "1",
+//       phone: "1",
+//       scorePhone: "1",
+//       src: "1",
+//       scoreSRC: "1",
+//       totalScore: "1",
+//       note: "1",
+//       dateStamp:dateStamp,
+//     });
+//     await workbook.xlsx.writeFile(filepath);
+//     console.log(3);
+//     res.send(workbook)
+//   }
+//   catch (err) {
+//     res.send(err)
+//   }
+// });
+
+app.get("/SetupFile", async (req, res) => {
+  try {
+    await setupxlsxFile();
+    res.send('success')
+  }
+  catch (err) {
+    res.send(err)
+  }
 });
 
 app.get("/test", async (req, res) => {
@@ -237,36 +482,36 @@ app.get("/score", async (req, res) => {
         return obj.key === "fullname";
       })[0]
         ? lead.traits.filter((obj) => {
-            return obj.key === "fullname";
-          })[0].value
+          return obj.key === "fullname";
+        })[0].value
         : "",
       email: lead.external_ids.filter((obj) => {
         return obj.key === "identify_by_email";
       })[0]
         ? lead.external_ids.filter((obj) => {
-            return obj.key === "identify_by_email";
-          })[0].value
+          return obj.key === "identify_by_email";
+        })[0].value
         : "",
       phone: lead.external_ids.filter((obj) => {
         return obj.key === "identify_by_phone";
       })[0]
         ? lead.external_ids.filter((obj) => {
-            return obj.key === "identify_by_phone";
-          })[0].value
+          return obj.key === "identify_by_phone";
+        })[0].value
         : "",
       fb_id: lead.external_ids.filter((obj) => {
         return obj.key === "_fbp";
       })[0]
         ? lead.external_ids.filter((obj) => {
-            return obj.key === "_fbp";
-          })[0].value
+          return obj.key === "_fbp";
+        })[0].value
         : "",
       google_analytic_id: lead.external_ids.filter((obj) => {
         return obj.key === "client_id";
       })[0]
         ? lead.external_ids.filter((obj) => {
-            return obj.key === "client_id";
-          })[0].value
+          return obj.key === "client_id";
+        })[0].value
         : "",
       score_hcm: lead.additional_info.filter((obj) => {
         return obj.key === "city" && obj.value === "Ciudad Ho Chi Minh";
