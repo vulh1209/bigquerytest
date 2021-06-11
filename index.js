@@ -3,14 +3,15 @@ const express = require("express");
 const schedule = require("node-schedule");
 const cors = require("cors");
 const path = require("path");
-jsonfile = path.resolve("./json/test.json");
-RawLeadFile = path.resolve("./json/Data.json");
 const fs = require("fs");
 const puppeteer = require("puppeteer");
 const querystring = require("querystring");
 const bodyParser = require('body-parser');
 const Excel = require("exceljs");
 const moment = require("moment");
+const { logs, LocDanhsach } = require('./Ham');
+
+
 
 const bigquery = new BigQuery({
   projectId: "customerlabs-313302",
@@ -19,6 +20,8 @@ const bigquery = new BigQuery({
 
 const app = express();
 const filepath = "./report/ReportLeads.xlsx";
+jsonfile = path.resolve("./json/test.json");
+DataFile = path.resolve("./json/Data.json");
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(bodyParser.raw());
@@ -26,6 +29,12 @@ const port = 8080;
 app.use(cors());
 const datasetId = "report";
 const tableId = "leads";
+
+app.get("/Loc", async(req, res) => {
+  const json = await LocDanhsach(filepath)
+  res.send(json)
+});
+
 
 const job = schedule.scheduleJob("* /1 * * * *", function () {
   console.log("test schedule");
@@ -52,37 +61,28 @@ const getevent = async () => {
 
 const getrawlead = async () => {
   const sqlQuery = `SELECT * FROM \`customerlabs-313302.customerlabs.users_data\` ORDER BY inserted_at DESC`;
-
   const options = {
     query: sqlQuery,
   };
-
   const [rows] = await bigquery.query(options);
-
   return rows;
 };
 
 const clearData = async (ds, dt) => {
   const sqlQuery = `CREATE OR REPLACE TABLE \`customerlabs-313302.${ds}.${dt}\`  AS SELECT * FROM \`customerlabs-313302.${ds}.${dt}\` LIMIT 0;`;
-
   const options = {
     query: sqlQuery,
   };
-
   const [rows] = await bigquery.query(options);
-
   return rows;
 };
 
 const inserttest = async () => {
   const sqlQuery = `INSERT INTO \`test_dataset.test_table\` VALUES(‘SG Note 10’)`;
-
   const options = {
     query: sqlQuery,
   };
-
   const [rows] = await bigquery.query(options);
-
   return rows;
 };
 
@@ -577,7 +577,7 @@ app.get("/score", async (req, res) => {
     const [job] = await bigquery
       .dataset(dsname)
       .table(dtname)
-      .load(RawLeadFile, options);
+      .load(DataFile, options);
     console.log(`Job ${job.id} completed.`);
 
     // Check the job's status for errors
@@ -591,6 +591,40 @@ app.get("/score", async (req, res) => {
     res.send(err);
   }
 });
+
+app.get("/test11", async (req, res) => {
+  const rows = [{id: 1, name: 'a'}, {id: 2, name: 'b'}];
+  const data = rows.map(JSON.stringify).join("\n");
+  await fs.writeFileSync("./json/data.json", data);
+  const options = {
+    sourceFormat: "NEWLINE_DELIMITED_JSON",
+    schema: {
+      fields: [
+        { name: "id", type: "INTEGER","mode": "REQUIRED" },
+        { name: "name", type: "STRING","mode": "NULLABLE" },
+      ],
+    },
+    location: "asia-southeast1",
+  };
+  try {
+    const [job] = await bigquery
+      .dataset('Test')
+      .table('Data')
+      .load(DataFile, options);
+    console.log(`Job ${job.id} completed.`);
+
+    // Check the job's status for errors
+    const errors = job.status.errors;
+    if (errors && errors.length > 0) {
+      throw errors;
+    } else {
+      res.send(job);
+    }
+  } catch (err) {
+    res.send(err);
+  }
+});
+
 
 const server = app.listen(port, () => {
   console.log(`Example app listening at http://localhost:${port}`);
